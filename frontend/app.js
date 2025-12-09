@@ -357,7 +357,7 @@ function resetViewer() {
 // 生成报告（基因搜索）
 async function generateReport(geneName) {
     const content = document.getElementById('reportContent');
-    content.textContent = '正在生成报告...';
+    content.innerHTML = '正在生成报告...';
 
     try {
         const response = await fetch(`${API_BASE}/report?gene_name=${encodeURIComponent(geneName)}`);
@@ -368,16 +368,17 @@ async function generateReport(geneName) {
         }
 
         currentReport = data.report;
-        content.textContent = data.report;
+        // 使用 marked 解析 Markdown
+        content.innerHTML = marked.parse(data.report);
     } catch (error) {
-        content.textContent = `生成报告失败: ${error.message}`;
+        content.innerHTML = `生成报告失败: ${error.message}`;
     }
 }
 
 // 生成报告（PDB 搜索）
 async function generateReportForPdb(pdbId) {
     const content = document.getElementById('reportContent');
-    content.textContent = '正在生成报告...';
+    content.innerHTML = '正在生成报告...';
 
     try {
         const response = await fetch(`${API_BASE}/report?pdb_ids=${pdbId}`);
@@ -388,9 +389,10 @@ async function generateReportForPdb(pdbId) {
         }
 
         currentReport = data.report;
-        content.textContent = data.report;
+        // 使用 marked 解析 Markdown
+        content.innerHTML = marked.parse(data.report);
     } catch (error) {
-        content.textContent = `生成报告失败: ${error.message}`;
+        content.innerHTML = `生成报告失败: ${error.message}`;
     }
 }
 
