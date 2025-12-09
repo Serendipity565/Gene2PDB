@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧬 PDB蛋白结构分析平台</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- 头部 -->
+        <header class="header">
+            <h1>🧬 PDB蛋白结构分析平台</h1>
+            <p class="subtitle">基因查询 · 结构分析 · 3D可视化</p>
+        </header>
+
+        <!-- 搜索区域 -->
+        <section class="search-section">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="输入基因名（如 INS, TP53）或 PDB ID（如 1A3N）" />
+                <button id="searchBtn" onclick="quickAnalysis()">
+                    <span>🔍</span> 分析
+                </button>
+            </div>
+            <div class="search-options">
+                <label>
+                    <input type="radio" name="searchType" value="gene" checked> 基因名搜索
+                </label>
+                <label>
+                    <input type="radio" name="searchType" value="pdb"> PDB ID搜索
+                </label>
+                <select id="speciesSelect">
+                    <option value="human">人类 (Human)</option>
+                    <option value="mouse">小鼠 (Mouse)</option>
+                    <option value="rat">大鼠 (Rat)</option>
+                </select>
+            </div>
+        </section>
+
+        <!-- 加载动画 -->
+        <div id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <p>正在分析中，请稍候...</p>
+        </div>
+
+        <!-- 结果区域 -->
+        <main id="results" class="results hidden">
+            <!-- 基本信息卡片 -->
+            <section class="card info-card">
+                <h2>📊 基本信息</h2>
+                <div id="basicInfo" class="info-grid">
+                    <!-- 动态填充 -->
+                </div>
+            </section>
+
+            <!-- 结构列表 -->
+            <section class="card structures-card">
+                <h2>🔬 相关PDB结构</h2>
+                <div id="structuresList" class="structures-list">
+                    <!-- 动态填充 -->
+                </div>
+            </section>
+
+            <!-- 结构详情 -->
+            <section id="structureDetail" class="card detail-card hidden">
+                <h2>📋 结构详情</h2>
+                <div id="detailContent" class="detail-content">
+                    <!-- 动态填充 -->
+                </div>
+            </section>
+
+            <!-- 3D可视化 -->
+            <section class="card viewer-card">
+                <h2>🎯 3D结构可视化</h2>
+                <div class="viewer-controls">
+                    <select id="styleSelect" onchange="updateViewer()">
+                        <option value="cartoon">卡通模式</option>
+                        <option value="stick">棍状模式</option>
+                        <option value="sphere">球状模式</option>
+                        <option value="surface">表面模式</option>
+                    </select>
+                    <select id="colorSelect" onchange="updateViewer()">
+                        <option value="spectrum">彩虹色</option>
+                        <option value="chain">按链着色</option>
+                        <option value="ss">按二级结构</option>
+                    </select>
+                    <button onclick="resetViewer()">重置视图</button>
+                </div>
+                <div id="viewer3d" class="viewer-container">
+                    <p class="viewer-placeholder">选择一个PDB结构以查看3D模型</p>
+                </div>
+            </section>
+
+            <!-- 分析报告 -->
+            <section class="card report-card">
+                <h2>📝 分析报告</h2>
+                <div id="reportContent" class="report-content">
+                    <!-- 动态填充 -->
+                </div>
+                <button onclick="downloadReport()" class="download-btn">📥 下载报告</button>
+            </section>
+        </main>
+
+        <!-- 错误提示 -->
+        <div id="errorMsg" class="error-msg hidden">
+            <span>⚠️</span>
+            <p id="errorText"></p>
+            <button onclick="hideError()">关闭</button>
+        </div>
+
+        <!-- 页脚 -->
+        <footer class="footer">
+            <p>基于 gget-pdb 扩展模块 | 数据来源: RCSB PDB, UniProt, PDBe</p>
+            <p>© 2025 PDB蛋白结构分析平台</p>
+        </footer>
+    </div>
+
+    <!-- 3Dmol.js 库 -->
+    <script src="https://3dmol.org/build/3Dmol-min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
+
