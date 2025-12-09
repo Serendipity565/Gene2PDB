@@ -1,16 +1,12 @@
 #文件:gget_pdb.py
 import requests
-import json
-from Bio.PDB import PDBParser, PDBList, NeighborSearch, Selection
+from Bio.PDB import PDBParser, PDBList
 from Bio.PDB.DSSP import DSSP
 from Bio.PDB.SASA import ShrakeRupley
 from Bio.SeqUtils import ProtParam
-from Bio.Seq import Seq
 from Bio.Align import PairwiseAligner
 import py3Dmol
 import pandas as pd
-import numpy as np
-from IPython.display import display, Markdown, HTML
 import warnings
 import re
 
@@ -117,18 +113,28 @@ class GGETPDB:
                     'title': data.get('struct', {}).get('title', 'N/A'),
                     'resolution': data.get('rcsb_entry_info', {}).get('resolution_combined', ['N/A'])[0],
                     'method': data.get('exptl', [{}])[0].get('method', 'N/A'),
-                    'organism': data.get('rcsb_entity_source_organism', [{}])[0].get('scientific_name', 'N/A'),
+                    'organism': 'N/A',  # 将从polymer_entity获取
                     'release_date': data.get('rcsb_accession_info', {}).get('deposit_date', 'N/A'),
                     'chains': []
                 }
 
-                # 获取链信息
+                # 获取链信息和来源生物
                 polymer_url = f"{self.rcsb_base}/core/polymer_entity/{pdb_id}/1"
                 polymer_resp = requests.get(polymer_url)
                 if polymer_resp.status_code == 200:
                     polymer_data = polymer_resp.json()
                     info['sequence'] = polymer_data.get('entity_poly', {}).get('pdbx_seq_one_letter_code_can', '')
                     info['length'] = len(info['sequence']) if info['sequence'] else 0
+
+                    # 从polymer_entity获取来源生物信息
+                    # 优先使用 rcsb_entity_source_organism，如果没有则使用 rcsb_entity_host_organism
+                    source_organism = polymer_data.get('rcsb_entity_source_organism')
+                    if source_organism and len(source_organism) > 0:
+                        info['organism'] = source_organism[0].get('scientific_name', 'N/A')
+                    else:
+                        host_organism = polymer_data.get('rcsb_entity_host_organism')
+                        if host_organism and len(host_organism) > 0:
+                            info['organism'] = host_organism[0].get('scientific_name', 'N/A')
 
                 return info
         except Exception as e:
@@ -177,8 +183,10 @@ class GGETPDB:
         return viewer
 
     # ==================== 4. 物化性质分析 ====================
-    def analyze_structure(self, pdb_id, properties=['all']):
+    def analyze_structure(self, pdb_id, properties=None):
         """分析蛋白结构的物化性质"""
+        if properties is None:
+            properties = ['all']
         print(f"🧪 正在分析 {pdb_id} 的物化性质...")
 
         # 下载PDB文件
@@ -193,12 +201,10 @@ class GGETPDB:
         structure = parser.get_structure(pdb_id, pdb_file)
         model = structure[0]
 
-        results = {'pdb_id': pdb_id}
+        results: dict = {'pdb_id': pdb_id, 'num_chains': len(list(model.get_chains())),
+                         'num_residues': len(list(model.get_residues())), 'num_atoms': len(list(model.get_atoms()))}
 
         # 1. 基础信息
-        results['num_chains'] = len(list(model.get_chains()))
-        results['num_residues'] = len(list(model.get_residues()))
-        results['num_atoms'] = len(list(model.get_atoms()))
 
         # 2. 序列分析（如果可用）
         if hasattr(self, 'sequence') and self.sequence:
@@ -207,24 +213,181 @@ class GGETPDB:
             results['isoelectric_point'] = protein_analyzer.isoelectric_point()
             results['amino_acid_composition'] = protein_analyzer.get_amino_acids_percent()
 
-        # 3. 二级结构估算（需要DSSP，此处为简化版）
-        try:
-            dssp = DSSP(model, pdb_file)
-            ss_counts = {'H': 0, 'B': 0, 'E': 0, 'G': 0, 'I': 0, 'T': 0, 'S': 0}
-            for key in dssp.keys():
-                ss = dssp[key][2]
-                if ss in ss_counts:
-                    ss_counts[ss] += 1
+        # 3. 二级结构估算（优先从API获取，失败后尝试DSSP）
+        # 首先尝试从API获取二级结构
+        ss_from_api = self._get_secondary_structure_from_api(pdb_id)
+        if ss_from_api:
+            results['secondary_structure'] = ss_from_api
+        else:
+            # 备用方案：尝试DSSP
+            try:
+                dssp = DSSP(model, pdb_file)
+                ss_counts = {'H': 0, 'B': 0, 'E': 0, 'G': 0, 'I': 0, 'T': 0, 'S': 0, '-': 0}
+                for key in dssp.keys():
+                    ss = dssp[key][2]
+                    if ss in ss_counts:
+                        ss_counts[ss] += 1
 
-            results['secondary_structure'] = {
-                'helix': ss_counts['H'],
-                'beta_sheet': ss_counts['E'],
-                'coil': sum(ss_counts.values()) - (ss_counts['H'] + ss_counts['E'])
-            }
-        except:
-            results['secondary_structure'] = {'helix': 'N/A', 'beta_sheet': 'N/A', 'coil': 'N/A'}
+                total = sum(ss_counts.values())
+                results['secondary_structure'] = {
+                    'helix': ss_counts['H'] + ss_counts['G'] + ss_counts['I'],
+                    'beta_sheet': ss_counts['E'] + ss_counts['B'],
+                    'coil': ss_counts['T'] + ss_counts['S'] + ss_counts['-'],
+                    'helix_pct': round((ss_counts['H'] + ss_counts['G'] + ss_counts['I']) / total * 100, 1) if total > 0 else 0,
+                    'beta_pct': round((ss_counts['E'] + ss_counts['B']) / total * 100, 1) if total > 0 else 0,
+                    'coil_pct': round((ss_counts['T'] + ss_counts['S'] + ss_counts['-']) / total * 100, 1) if total > 0 else 0,
+                    'source': 'DSSP'
+                }
+            except Exception as e:
+                results['secondary_structure'] = {
+                    'helix': 'N/A',
+                    'beta_sheet': 'N/A',
+                    'coil': 'N/A',
+                    'note': 'DSSP未安装，请运行: brew install dssp (macOS) 或 apt-get install dssp (Linux)'
+                }
 
         return results
+
+    def _get_secondary_structure_from_api(self, pdb_id):
+        """从RCSB/PDBe API获取二级结构信息"""
+        # 方法1: 尝试从PDBe API获取二级结构注解
+        try:
+            pdbe_url = f"https://www.ebi.ac.uk/pdbe/api/pdb/entry/secondary_structure/{pdb_id.lower()}"
+            response = requests.get(pdbe_url, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                pdb_data = data.get(pdb_id.lower(), {})
+                molecules = pdb_data.get('molecules', [])
+
+                total_helix = 0
+                total_strand = 0
+                total_coil = 0
+                total_residues = 0
+
+                for molecule in molecules:
+                    chains = molecule.get('chains', [])
+                    for chain in chains:
+                        secondary_structure = chain.get('secondary_structure', {})
+
+                        # 统计螺旋
+                        helices = secondary_structure.get('helices', [])
+                        for helix in helices:
+                            start = helix.get('start', {}).get('residue_number', 0)
+                            end = helix.get('end', {}).get('residue_number', 0)
+                            if end >= start:
+                                total_helix += (end - start + 1)
+
+                        # 统计β折叠
+                        strands = secondary_structure.get('strands', [])
+                        for strand in strands:
+                            start = strand.get('start', {}).get('residue_number', 0)
+                            end = strand.get('end', {}).get('residue_number', 0)
+                            if end >= start:
+                                total_strand += (end - start + 1)
+
+                # 从RCSB获取总残基数
+                try:
+                    rcsb_url = f"https://data.rcsb.org/rest/v1/core/entry/{pdb_id}"
+                    rcsb_resp = requests.get(rcsb_url, timeout=10)
+                    if rcsb_resp.status_code == 200:
+                        rcsb_data = rcsb_resp.json()
+                        total_residues = rcsb_data.get('rcsb_entry_info', {}).get('deposited_polymer_monomer_count', 0)
+                except:
+                    pass
+
+                if total_helix > 0 or total_strand > 0:
+                    total_coil = max(0, total_residues - total_helix - total_strand) if total_residues > 0 else 0
+
+                    result = {
+                        'helix': total_helix,
+                        'beta_sheet': total_strand,
+                        'coil': total_coil if total_residues > 0 else 'N/A',
+                        'source': 'PDBe API'
+                    }
+
+                    # 计算百分比
+                    if total_residues > 0:
+                        result['helix_pct'] = round(total_helix / total_residues * 100, 1)
+                        result['beta_pct'] = round(total_strand / total_residues * 100, 1)
+                        result['coil_pct'] = round(total_coil / total_residues * 100, 1)
+
+                    return result
+        except Exception as e:
+            print(f"PDBe API获取二级结构失败: {e}")
+
+        # 方法2: 尝试从RCSB获取简化的二级结构信息
+        try:
+            url = f"https://data.rcsb.org/rest/v1/core/polymer_entity/{pdb_id}/1"
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                # 从entity_poly获取序列长度
+                seq_length = len(data.get('entity_poly', {}).get('pdbx_seq_one_letter_code_can', ''))
+
+                # 尝试获取二级结构注解
+                annotations = data.get('rcsb_polymer_entity_annotation', [])
+                helix_residues = 0
+                sheet_residues = 0
+
+                for annotation in annotations:
+                    ann_type = annotation.get('type', '')
+                    if 'HELIX' in ann_type.upper():
+                        # 尝试获取范围
+                        feature = annotation.get('annotation_lineage', [{}])
+                        helix_residues += 1
+                    elif 'SHEET' in ann_type.upper() or 'STRAND' in ann_type.upper():
+                        sheet_residues += 1
+
+                if helix_residues > 0 or sheet_residues > 0:
+                    return {
+                        'helix': helix_residues,
+                        'beta_sheet': sheet_residues,
+                        'coil': 'N/A',
+                        'source': 'RCSB API (简化)'
+                    }
+        except Exception as e:
+            print(f"RCSB API获取二级结构失败: {e}")
+
+        return None
+
+    def _get_hydrogen_bonds_from_api(self, pdb_id):
+        """从PDBe API获取氢键信息"""
+        try:
+            # PDBe提供的分子间相互作用API
+            url = f"https://www.ebi.ac.uk/pdbe/api/pdb/entry/summary/{pdb_id.lower()}"
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                pdb_data = data.get(pdb_id.lower(), [{}])[0]
+
+                # 从摘要中尝试获取相关信息
+                # 注意：PDBe API不直接提供氢键数量，这里返回估算信息
+                num_entities = pdb_data.get('number_of_entities', {}).get('polypeptide', 0)
+                total_residues = 0
+
+                # 获取残基数用于估算
+                try:
+                    rcsb_url = f"https://data.rcsb.org/rest/v1/core/entry/{pdb_id}"
+                    rcsb_resp = requests.get(rcsb_url, timeout=10)
+                    if rcsb_resp.status_code == 200:
+                        rcsb_data = rcsb_resp.json()
+                        total_residues = rcsb_data.get('rcsb_entry_info', {}).get('deposited_polymer_monomer_count', 0)
+                except:
+                    pass
+
+                if total_residues > 0:
+                    # 粗略估算：平均每个残基约有0.7-1.0个主链氢键
+                    estimated_hbonds = int(total_residues * 0.85)
+                    return {
+                        'backbone_hbonds': f"~{estimated_hbonds} (估算)",
+                        'total': f"~{estimated_hbonds} (估算)",
+                        'source': 'PDBe API (估算值)',
+                        'note': '基于残基数估算，精确值需要DSSP分析'
+                    }
+        except Exception as e:
+            print(f"PDBe API获取氢键信息失败: {e}")
+
+        return None
 
     # ==================== 4.1 高级结构分析 ====================
     def analyze_advanced_structure(self, pdb_id):
@@ -243,20 +406,39 @@ class GGETPDB:
         structure = parser.get_structure(pdb_id, pdb_file)
         model = structure[0]
 
-        results = {'pdb_id': pdb_id}
+        results: dict = {'pdb_id': pdb_id, 'disulfide_bonds': self._find_disulfide_bonds(model),
+                         'salt_bridges': self._find_salt_bridges(model)}
 
         # 1. 二硫键分析
-        results['disulfide_bonds'] = self._find_disulfide_bonds(model)
 
         # 2. 盐桥分析
-        results['salt_bridges'] = self._find_salt_bridges(model)
 
-        # 3. 氢键统计（基于DSSP）
-        try:
-            dssp = DSSP(model, pdb_file)
-            results['hydrogen_bonds'] = self._count_hydrogen_bonds(dssp)
-        except Exception as e:
-            results['hydrogen_bonds'] = {'total': 'N/A', 'error': str(e)}
+        # 3. 氢键统计（优先从API获取，失败后尝试DSSP）
+        # 首先尝试从API获取氢键信息
+        hbonds_from_api = self._get_hydrogen_bonds_from_api(pdb_id)
+        if hbonds_from_api:
+            results['hydrogen_bonds'] = hbonds_from_api
+        else:
+            # 备用方案：尝试DSSP
+            try:
+                dssp = DSSP(model, pdb_file)
+                results['hydrogen_bonds'] = self._count_hydrogen_bonds(dssp)
+                results['hydrogen_bonds']['source'] = 'DSSP'
+            except Exception as e:
+                # 提供更详细的错误信息和解决方案
+                error_msg = str(e)
+                if 'mkdssp' in error_msg.lower() or 'dssp' in error_msg.lower():
+                    results['hydrogen_bonds'] = {
+                        'backbone_hbonds': 'N/A',
+                        'total': 'N/A',
+                        'note': 'DSSP未安装，请运行: brew install dssp (macOS) 或 apt-get install dssp (Linux)'
+                    }
+                else:
+                    results['hydrogen_bonds'] = {
+                        'backbone_hbonds': 'N/A',
+                        'total': 'N/A',
+                        'error': error_msg
+                    }
 
         # 4. SASA分析（每条链）
         results['sasa_per_chain'] = self._calculate_sasa(model)
@@ -777,7 +959,7 @@ class GGETPDB:
                     info = self.fetch_pdb_info(pdb_id)
                     if info:
                         report.append(f"{i}. **{pdb_id}**: {info['title']} (分辨率: {info['resolution']}Å)")
-                pdb_ids = structures[:2]  # 取前两个进行分析
+                pdb_ids = structures[:]  # 取前两个进行分析
             else:
                 report.append("⚠️ 未找到相关结构，请直接提供PDB ID")
                 pdb_ids = pdb_ids or []
@@ -786,7 +968,7 @@ class GGETPDB:
             report.append("\n## 2. 结构分析")
 
             # 分析每个结构
-            for i, pdb_id in enumerate(pdb_ids[:2]):  # 限制数量
+            for i, pdb_id in enumerate(pdb_ids[:]):  # 限制数量
                 report.append(f"\n### 结构 {i + 1}: {pdb_id}")
 
                 # 基本信息
