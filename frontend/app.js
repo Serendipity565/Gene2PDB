@@ -278,6 +278,12 @@ async function showStructureDetail(pdbId) {
 
         content.innerHTML = html;
 
+        // 加载高级分析
+        loadAdvancedAnalysis(pdbId);
+
+        // 加载序列分析
+        loadSequenceAnalysis(pdbId);
+
     } catch (error) {
         content.innerHTML = `<p>加载详情失败: ${error.message}</p>`;
     }
@@ -440,3 +446,409 @@ function hideError() {
     document.getElementById('errorMsg').classList.add('hidden');
 }
 
+// ==================== 高级结构分析 ====================
+async function loadAdvancedAnalysis(pdbId) {
+    const container = document.getElementById('advancedAnalysis');
+    const content = document.getElementById('advancedContent');
+
+    container.classList.remove('hidden');
+    content.innerHTML = '<p>正在加载高级分析数据...</p>';
+
+    try {
+        const response = await fetch(`${API_BASE}/pdb/analyze-advanced/${pdbId}`);
+        const data = await response.json();
+
+        if (data.error) {
+            content.innerHTML = `<p>加载失败: ${data.error}</p>`;
+            return;
+        }
+
+        let html = '';
+
+        // 二硫键
+        html += `
+            <div class="analysis-section">
+                <h3>🔗 二硫键</h3>
+                <p><strong>数量:</strong> ${data.disulfide_bonds?.count || 0}</p>
+        `;
+        if (data.disulfide_bonds?.bonds?.length > 0) {
+            html += '<ul>';
+            data.disulfide_bonds.bonds.forEach(bond => {
+                html += `<li>${bond.cys1} ↔ ${bond.cys2} (${bond.distance}Å)</li>`;
+            });
+            html += '</ul>';
+        }
+        html += '</div>';
+
+        // 盐桥
+        html += `
+            <div class="analysis-section">
+                <h3>⚡ 盐桥</h3>
+                <p><strong>数量:</strong> ${data.salt_bridges?.count || 0}</p>
+        `;
+        if (data.salt_bridges?.bridges?.length > 0) {
+            html += '<ul class="salt-bridge-list">';
+            data.salt_bridges.bridges.slice(0, 10).forEach(bridge => {
+                html += `<li>${bridge.positive} ↔ ${bridge.negative} (${bridge.distance}Å)</li>`;
+            });
+            if (data.salt_bridges.bridges.length > 10) {
+                html += `<li>...及其他 ${data.salt_bridges.bridges.length - 10} 个</li>`;
+            }
+            html += '</ul>';
+        }
+        html += '</div>';
+
+        // 氢键
+        html += `
+            <div class="analysis-section">
+                <h3>💧 氢键</h3>
+                <p><strong>主链氢键数:</strong> ${data.hydrogen_bonds?.backbone_hbonds || 'N/A'}</p>
+            </div>
+        `;
+
+        // SASA
+        if (data.sasa_per_chain && !data.sasa_per_chain.error) {
+            html += `
+                <div class="analysis-section">
+                    <h3>🌊 溶剂可及表面积 (SASA)</h3>
+                    <table class="data-table">
+                        <tr><th>链</th><th>SASA (Å²)</th></tr>
+            `;
+            for (const [chain, sasa] of Object.entries(data.sasa_per_chain)) {
+                html += `<tr><td>链 ${chain}</td><td>${sasa}</td></tr>`;
+            }
+            html += '</table></div>';
+        }
+
+        // 疏水/亲水比例
+        if (data.hydrophobicity_per_chain) {
+            html += `
+                <div class="analysis-section">
+                    <h3>💦 疏水/亲水残基比例</h3>
+                    <table class="data-table">
+                        <tr><th>链</th><th>疏水残基</th><th>亲水残基</th><th>比例</th></tr>
+            `;
+            for (const [chain, info] of Object.entries(data.hydrophobicity_per_chain)) {
+                html += `
+                    <tr>
+                        <td>链 ${chain}</td>
+                        <td>${info.hydrophobic_count} (${info.hydrophobic_ratio}%)</td>
+                        <td>${info.hydrophilic_count} (${info.hydrophilic_ratio}%)</td>
+                        <td>
+                            <div class="ratio-bar">
+                                <div class="hydrophobic" style="width: ${info.hydrophobic_ratio}%"></div>
+                                <div class="hydrophilic" style="width: ${info.hydrophilic_ratio}%"></div>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }
+            html += '</table></div>';
+        }
+
+        content.innerHTML = html;
+
+    } catch (error) {
+        content.innerHTML = `<p>加载高级分析失败: ${error.message}</p>`;
+    }
+}
+
+// ==================== 突变影响分析 ====================
+async function analyzeMutation() {
+    const mutationInput = document.getElementById('mutationInput').value.trim();
+    const resultContainer = document.getElementById('mutationResult');
+
+    if (!currentPdbId) {
+        showError('请先选择一个 PDB 结构');
+        return;
+    }
+
+    if (!mutationInput) {
+        showError('请输入突变信息，格式: A:K33E');
+        return;
+    }
+
+    resultContainer.classList.remove('hidden');
+    resultContainer.innerHTML = '<p>正在分析突变影响...</p>';
+
+    try {
+        const response = await fetch(
+            `${API_BASE}/pdb/mutation?pdb_id=${currentPdbId}&mutation=${encodeURIComponent(mutationInput)}`
+        );
+        const data = await response.json();
+
+        if (data.error) {
+            resultContainer.innerHTML = `<p class="error">${data.error}</p>`;
+            return;
+        }
+
+        const impact = data.impact_assessment;
+        const impactClass = impact.level === '高' ? 'high' : (impact.level === '中' ? 'medium' : 'low');
+
+        let html = `
+            <div class="mutation-summary">
+                <h3>突变: ${data.mutation}</h3>
+                <div class="impact-badge ${impactClass}">影响程度: ${impact.level}</div>
+                <p>${impact.description}</p>
+            </div>
+            
+            <div class="mutation-details">
+                <div class="aa-comparison">
+                    <div class="aa-box wt">
+                        <h4>野生型 (${data.wild_type.aa})</h4>
+                        <p><strong>名称:</strong> ${data.wild_type.name}</p>
+                        <p><strong>电荷:</strong> ${data.wild_type.charge}</p>
+                        <p><strong>体积:</strong> ${data.wild_type.volume}Å³</p>
+                        <p><strong>疏水性:</strong> ${data.wild_type.hydrophobic ? '是' : '否'}</p>
+                    </div>
+                    <div class="aa-arrow">→</div>
+                    <div class="aa-box mut">
+                        <h4>突变型 (${data.mutant.aa})</h4>
+                        <p><strong>名称:</strong> ${data.mutant.name}</p>
+                        <p><strong>电荷:</strong> ${data.mutant.charge}</p>
+                        <p><strong>体积:</strong> ${data.mutant.volume}Å³</p>
+                        <p><strong>疏水性:</strong> ${data.mutant.hydrophobic ? '是' : '否'}</p>
+                    </div>
+                </div>
+                
+                <div class="changes-summary">
+                    <h4>变化摘要</h4>
+                    <ul>
+                        <li>电荷变化: ${data.changes.charge_change > 0 ? '+' : ''}${data.changes.charge_change}</li>
+                        <li>体积变化: ${data.changes.volume_change > 0 ? '+' : ''}${data.changes.volume_change}Å³</li>
+                        <li>疏水性变化: ${data.changes.hydrophobicity_change ? '是' : '否'}</li>
+                        <li>极性变化: ${data.changes.polarity_change ? '是' : '否'}</li>
+                    </ul>
+                </div>
+        `;
+
+        if (impact.reasons && impact.reasons.length > 0) {
+            html += `
+                <div class="impact-reasons">
+                    <h4>影响原因</h4>
+                    <ul>
+                        ${impact.reasons.map(r => `<li>${r}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+
+        if (data.structural_context) {
+            html += `
+                <div class="structural-context">
+                    <h4>结构上下文</h4>
+                    <p><strong>结构中该位置残基:</strong> ${data.structural_context.found_residue || 'N/A'}</p>
+                    ${data.structural_context.secondary_structure ? `<p><strong>二级结构:</strong> ${data.structural_context.secondary_structure}</p>` : ''}
+                    ${data.structural_context.warning ? `<p class="warning">⚠️ ${data.structural_context.warning}</p>` : ''}
+                </div>
+            `;
+        }
+
+        html += '</div>';
+        resultContainer.innerHTML = html;
+
+    } catch (error) {
+        resultContainer.innerHTML = `<p class="error">分析失败: ${error.message}</p>`;
+    }
+}
+
+// ==================== 序列组成分析 ====================
+let sequenceCharts = {};
+
+async function loadSequenceAnalysis(pdbId) {
+    const container = document.getElementById('sequenceAnalysis');
+    const content = document.getElementById('sequenceContent');
+
+    container.classList.remove('hidden');
+    content.innerHTML = '<p>正在加载序列分析数据...</p>';
+
+    try {
+        const response = await fetch(`${API_BASE}/pdb/sequence-composition/${pdbId}`);
+        const data = await response.json();
+
+        if (data.error) {
+            content.innerHTML = `<p>加载失败: ${data.error}</p>`;
+            return;
+        }
+
+        let html = '';
+
+        // 为每条链创建图表
+        for (const [chainId, chainData] of Object.entries(data.chains || {})) {
+            html += `
+                <div class="chain-analysis">
+                    <h3>链 ${chainId} (${chainData.length} 个残基)</h3>
+                    <div class="category-stats">
+                        <span class="stat-item positive">正电荷: ${chainData.category_statistics.charged_positive_pct}%</span>
+                        <span class="stat-item negative">负电荷: ${chainData.category_statistics.charged_negative_pct}%</span>
+                        <span class="stat-item hydrophobic">疏水: ${chainData.category_statistics.hydrophobic_pct}%</span>
+                        <span class="stat-item polar">极性: ${chainData.category_statistics.polar_uncharged_pct}%</span>
+                        <span class="stat-item aromatic">芳香: ${chainData.category_statistics.aromatic_pct}%</span>
+                    </div>
+                    <canvas id="chart-${pdbId}-${chainId}" height="200"></canvas>
+                </div>
+            `;
+        }
+
+        content.innerHTML = html;
+
+        // 绘制图表
+        for (const [chainId, chainData] of Object.entries(data.chains || {})) {
+            createAminoAcidChart(`chart-${pdbId}-${chainId}`, chainData);
+        }
+
+    } catch (error) {
+        content.innerHTML = `<p>加载序列分析失败: ${error.message}</p>`;
+    }
+}
+
+function createAminoAcidChart(canvasId, chainData) {
+    const ctx = document.getElementById(canvasId);
+    if (!ctx) return;
+
+    // 销毁之前的图表
+    if (sequenceCharts[canvasId]) {
+        sequenceCharts[canvasId].destroy();
+    }
+
+    const aminoAcids = Object.keys(chainData.amino_acid_percentages);
+    const percentages = Object.values(chainData.amino_acid_percentages);
+
+    // 根据氨基酸属性设置颜色
+    const colors = aminoAcids.map(aa => {
+        if (['K', 'R', 'H'].includes(aa)) return '#3498db'; // 正电荷 - 蓝色
+        if (['D', 'E'].includes(aa)) return '#e74c3c'; // 负电荷 - 红色
+        if (['A', 'V', 'L', 'I', 'M', 'F', 'W', 'P'].includes(aa)) return '#f39c12'; // 疏水 - 橙色
+        if (['S', 'T', 'N', 'Q', 'Y', 'C'].includes(aa)) return '#2ecc71'; // 极性 - 绿色
+        return '#9b59b6'; // 其他 - 紫色
+    });
+
+    sequenceCharts[canvasId] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: aminoAcids,
+            datasets: [{
+                label: '氨基酸占比 (%)',
+                data: percentages,
+                backgroundColor: colors,
+                borderColor: colors.map(c => c),
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.parsed.y.toFixed(2)}%`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: '百分比 (%)'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: '氨基酸'
+                    }
+                }
+            }
+        }
+    });
+}
+
+// ==================== UniProt 序列比对 ====================
+async function alignWithUniprot() {
+    const uniprotId = document.getElementById('uniprotIdInput').value.trim();
+    const container = document.getElementById('alignmentAnalysis');
+    const result = document.getElementById('alignmentResult');
+
+    if (!currentPdbId) {
+        showError('请先选择一个 PDB 结构');
+        return;
+    }
+
+    container.classList.remove('hidden');
+    result.innerHTML = '<p>正在进行序列比对...</p>';
+
+    try {
+        let url = `${API_BASE}/pdb/align-uniprot/${currentPdbId}`;
+        if (uniprotId) {
+            url += `?uniprot_id=${encodeURIComponent(uniprotId)}`;
+        }
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (data.error) {
+            result.innerHTML = `<p class="error">${data.error}</p>`;
+            return;
+        }
+
+        let html = `
+            <div class="alignment-summary">
+                <h3>比对结果</h3>
+                <p><strong>PDB ID:</strong> ${data.pdb_id}</p>
+                <p><strong>UniProt ID:</strong> ${data.uniprot_id}</p>
+                <p><strong>UniProt 序列长度:</strong> ${data.uniprot_length} 残基</p>
+            </div>
+            
+            <div class="chain-alignments">
+        `;
+
+        for (const [chainId, alignment] of Object.entries(data.chain_alignments || {})) {
+            html += `
+                <div class="chain-alignment">
+                    <h4>链 ${chainId}</h4>
+                    <div class="alignment-stats">
+                        <div class="stat">
+                            <span class="label">PDB 长度</span>
+                            <span class="value">${alignment.pdb_length}</span>
+                        </div>
+                        <div class="stat">
+                            <span class="label">序列一致性</span>
+                            <span class="value identity">${alignment.identity_percent}%</span>
+                        </div>
+                        <div class="stat">
+                            <span class="label">覆盖率</span>
+                            <span class="value">${alignment.coverage_percent}%</span>
+                        </div>
+                    </div>
+            `;
+
+            if (alignment.missing_regions && alignment.missing_regions.length > 0) {
+                html += `
+                    <div class="missing-regions">
+                        <h5>缺失区段</h5>
+                        <ul>
+                            ${alignment.missing_regions.map(r => 
+                                `<li>位置 ${r.start}-${r.end} (${r.length} 残基)</li>`
+                            ).join('')}
+                        </ul>
+                    </div>
+                `;
+            } else {
+                html += '<p class="no-missing">✅ 无缺失区段</p>';
+            }
+
+            html += '</div>';
+        }
+
+        html += '</div>';
+        result.innerHTML = html;
+
+    } catch (error) {
+        result.innerHTML = `<p class="error">比对失败: ${error.message}</p>`;
+    }
+}
