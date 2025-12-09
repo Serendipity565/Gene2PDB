@@ -195,7 +195,7 @@ curl "http://localhost:8080/api/gene/structures?gene_name=INS&species=human&max_
 {
   "gene_name": "INS",
   "species": "human",
-  "structures": ["7s5v", "7s60", ...],
+  "structures": ["7s5v", "7s60"],
   "count": 2
 }
 ```
@@ -288,11 +288,20 @@ curl "http://localhost:8080/api/quick?input=INS"
 
 ```json
 {
-  "type": "gene",              // 或 "pdb_id"
-  "gene_name": "INS",          // 如果是基因
-  "pdb_ids": ["7s5v", ...],
-  "info": { ... },              // 第一个结构的基础信息
-  "analysis": { ... }           // 物化性质分析
+  "type": "gene",
+  "gene_name": "INS",
+  "pdb_ids": ["7s5v", "7s60"],
+  "info": {
+    "pdb_id": "7s5v",
+    "title": "Some protein structure",
+    "resolution": 2.1,
+    "method": "X-RAY DIFFRACTION"
+  },
+  "analysis": {
+    "num_chains": 2,
+    "num_residues": 250,
+    "num_atoms": 2000
+  } 
 }
 ```
 
