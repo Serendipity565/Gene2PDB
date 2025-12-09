@@ -2,6 +2,8 @@
 
 基于基因名或 PDB ID，快速检索相关蛋白质结构、进行基础物化性质分析，并生成 Markdown 格式的结构分析报告，同时提供 Web 端 3D 可视化界面的小工具。
 
+![Gene2PDB 示例截图](https://github.com/Serendipity565/Gene2PDB/raw/main/example/INS.html.png)
+
 后端使用 Python + Flask 提供 REST API，前端是一个静态页面（原生 JS + `$3Dmol` + `marked`）用于交互式浏览和展示结果。
 
 ---
