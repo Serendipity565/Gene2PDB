@@ -5,6 +5,7 @@ const API_BASE = 'http://localhost:8080/api';
 let currentPdbId = null;
 let viewer = null;
 let currentReport = '';
+let currentSequencePdbId = null; // 跟踪当前序列分析的PDB ID
 
 // 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', () => {
@@ -203,6 +204,9 @@ async function selectStructure(pdbId) {
     }
 
     currentPdbId = pdbId;
+
+    // 重置序列分析状态，确保切换结构时重新加载
+    currentSequencePdbId = null;
 
     // 显示详情
     await showStructureDetail(pdbId);
@@ -686,12 +690,34 @@ async function loadSequenceAnalysis(pdbId) {
     const container = document.getElementById('sequenceAnalysis');
     const content = document.getElementById('sequenceContent');
 
+    // 如果是同一个PDB ID，不重复加载
+    if (currentSequencePdbId === pdbId) {
+        return;
+    }
+
     container.classList.remove('hidden');
+
+    // 先清空HTML内容
     content.innerHTML = '<p>正在加载序列分析数据...</p>';
+
+    // 销毁所有之前的图表，防止图表累积
+    for (const chartId of Object.keys(sequenceCharts)) {
+        if (sequenceCharts[chartId]) {
+            sequenceCharts[chartId].destroy();
+        }
+    }
+    sequenceCharts = {};
+
+    currentSequencePdbId = pdbId;
 
     try {
         const response = await fetch(`${API_BASE}/pdb/sequence-composition/${pdbId}`);
         const data = await response.json();
+
+        // 检查是否仍然是当前请求的PDB（防止异步竞态）
+        if (currentSequencePdbId !== pdbId) {
+            return;
+        }
 
         if (data.error) {
             content.innerHTML = `<p>加载失败: ${data.error}</p>`;
@@ -725,7 +751,9 @@ async function loadSequenceAnalysis(pdbId) {
         }
 
     } catch (error) {
-        content.innerHTML = `<p>加载序列分析失败: ${error.message}</p>`;
+        if (currentSequencePdbId === pdbId) {
+            content.innerHTML = `<p>加载序列分析失败: ${error.message}</p>`;
+        }
     }
 }
 
