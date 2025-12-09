@@ -201,12 +201,10 @@ class GGETPDB:
         structure = parser.get_structure(pdb_id, pdb_file)
         model = structure[0]
 
-        results = {'pdb_id': pdb_id}
+        results: dict = {'pdb_id': pdb_id, 'num_chains': len(list(model.get_chains())),
+                         'num_residues': len(list(model.get_residues())), 'num_atoms': len(list(model.get_atoms()))}
 
         # 1. 基础信息
-        results['num_chains'] = len(list(model.get_chains()))
-        results['num_residues'] = len(list(model.get_residues()))
-        results['num_atoms'] = len(list(model.get_atoms()))
 
         # 2. 序列分析（如果可用）
         if hasattr(self, 'sequence') and self.sequence:
@@ -408,13 +406,12 @@ class GGETPDB:
         structure = parser.get_structure(pdb_id, pdb_file)
         model = structure[0]
 
-        results = {'pdb_id': pdb_id}
+        results: dict = {'pdb_id': pdb_id, 'disulfide_bonds': self._find_disulfide_bonds(model),
+                         'salt_bridges': self._find_salt_bridges(model)}
 
         # 1. 二硫键分析
-        results['disulfide_bonds'] = self._find_disulfide_bonds(model)
 
         # 2. 盐桥分析
-        results['salt_bridges'] = self._find_salt_bridges(model)
 
         # 3. 氢键统计（优先从API获取，失败后尝试DSSP）
         # 首先尝试从API获取氢键信息
@@ -962,7 +959,7 @@ class GGETPDB:
                     info = self.fetch_pdb_info(pdb_id)
                     if info:
                         report.append(f"{i}. **{pdb_id}**: {info['title']} (分辨率: {info['resolution']}Å)")
-                pdb_ids = structures[:2]  # 取前两个进行分析
+                pdb_ids = structures[:]  # 取前两个进行分析
             else:
                 report.append("⚠️ 未找到相关结构，请直接提供PDB ID")
                 pdb_ids = pdb_ids or []
@@ -971,7 +968,7 @@ class GGETPDB:
             report.append("\n## 2. 结构分析")
 
             # 分析每个结构
-            for i, pdb_id in enumerate(pdb_ids[:2]):  # 限制数量
+            for i, pdb_id in enumerate(pdb_ids[:]):  # 限制数量
                 report.append(f"\n### 结构 {i + 1}: {pdb_id}")
 
                 # 基本信息
