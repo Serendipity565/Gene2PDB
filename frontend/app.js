@@ -252,14 +252,39 @@ async function showStructureDetail(pdbId) {
                 `;
 
                 if (analysis.secondary_structure) {
-                    html += `
+                    const ss = analysis.secondary_structure;
+                    let ssHtml = `
                         <div class="detail-section">
                             <h3>🔗 二级结构</h3>
-                            <p><strong>螺旋:</strong> ${analysis.secondary_structure.helix || 'N/A'}</p>
-                            <p><strong>β折叠:</strong> ${analysis.secondary_structure.beta_sheet || 'N/A'}</p>
-                            <p><strong>线圈:</strong> ${analysis.secondary_structure.coil || 'N/A'}</p>
-                        </div>
                     `;
+
+                    if (ss.helix !== 'N/A') {
+                        ssHtml += `<p><strong>螺旋:</strong> ${ss.helix}${ss.helix_pct ? ` (${ss.helix_pct}%)` : ''}</p>`;
+                    } else {
+                        ssHtml += `<p><strong>螺旋:</strong> N/A</p>`;
+                    }
+
+                    if (ss.beta_sheet !== 'N/A') {
+                        ssHtml += `<p><strong>β折叠:</strong> ${ss.beta_sheet}${ss.beta_pct ? ` (${ss.beta_pct}%)` : ''}</p>`;
+                    } else {
+                        ssHtml += `<p><strong>β折叠:</strong> N/A</p>`;
+                    }
+
+                    if (ss.coil !== 'N/A') {
+                        ssHtml += `<p><strong>线圈:</strong> ${ss.coil}${ss.coil_pct ? ` (${ss.coil_pct}%)` : ''}</p>`;
+                    } else {
+                        ssHtml += `<p><strong>线圈:</strong> N/A</p>`;
+                    }
+
+                    if (ss.note) {
+                        ssHtml += `<p class="note"><small>💡 ${ss.note}</small></p>`;
+                    }
+                    if (ss.source) {
+                        ssHtml += `<p><small>数据来源: ${ss.source}</small></p>`;
+                    }
+
+                    ssHtml += `</div>`;
+                    html += ssHtml;
                 }
             }
         } catch (e) {
@@ -503,6 +528,8 @@ async function loadAdvancedAnalysis(pdbId) {
             <div class="analysis-section">
                 <h3>💧 氢键</h3>
                 <p><strong>主链氢键数:</strong> ${data.hydrogen_bonds?.backbone_hbonds || 'N/A'}</p>
+                ${data.hydrogen_bonds?.source ? `<p><small>数据来源: ${data.hydrogen_bonds.source}</small></p>` : ''}
+                ${data.hydrogen_bonds?.note ? `<p class="note"><small>💡 ${data.hydrogen_bonds.note}</small></p>` : ''}
             </div>
         `;
 
