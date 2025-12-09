@@ -65,6 +65,66 @@ def analyze_pdb(pdb_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/pdb/analyze-advanced/<pdb_id>', methods=['GET'])
+def analyze_pdb_advanced(pdb_id):
+    """高级结构分析：氢键、盐桥、二硫键、SASA、疏水/亲水比例"""
+    try:
+        analysis = analyzer.analyze_advanced_structure(pdb_id)
+        if analysis:
+            return jsonify(analysis)
+        else:
+            return jsonify({'error': f'无法进行高级分析 {pdb_id}'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/pdb/mutation', methods=['GET'])
+def analyze_mutation():
+    """
+    分析突变影响
+    参数: pdb_id, mutation (格式: A:K33E)
+    """
+    pdb_id = request.args.get('pdb_id', '')
+    mutation = request.args.get('mutation', '')
+
+    if not pdb_id or not mutation:
+        return jsonify({'error': '请提供pdb_id和mutation参数，mutation格式: A:K33E'}), 400
+
+    try:
+        result = analyzer.analyze_mutation(pdb_id, mutation)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/pdb/sequence-composition/<pdb_id>', methods=['GET'])
+def analyze_sequence_composition(pdb_id):
+    """分析每条链的氨基酸组成统计"""
+    try:
+        result = analyzer.analyze_sequence_composition(pdb_id)
+        if result:
+            return jsonify(result)
+        else:
+            return jsonify({'error': f'无法分析序列组成 {pdb_id}'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/pdb/align-uniprot/<pdb_id>', methods=['GET'])
+def align_with_uniprot(pdb_id):
+    """
+    将PDB序列与UniProt canonical序列比对
+    可选参数: uniprot_id
+    """
+    uniprot_id = request.args.get('uniprot_id', None)
+
+    try:
+        result = analyzer.align_with_uniprot(pdb_id, uniprot_id)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/report', methods=['GET'])
 def generate_report():
     """生成分析报告"""
@@ -112,6 +172,10 @@ if __name__ == '__main__':
     print("   GET /api/gene/structures?gene_name=INS - 查找基因相关结构")
     print("   GET /api/pdb/info/<pdb_id> - 获取PDB信息")
     print("   GET /api/pdb/analyze/<pdb_id> - 分析PDB结构")
+    print("   GET /api/pdb/analyze-advanced/<pdb_id> - 高级结构分析(氢键/盐桥/二硫键/SASA)")
+    print("   GET /api/pdb/mutation?pdb_id=xxxx&mutation=A:K33E - 突变影响分析")
+    print("   GET /api/pdb/sequence-composition/<pdb_id> - 氨基酸组成统计")
+    print("   GET /api/pdb/align-uniprot/<pdb_id> - UniProt序列比对")
     print("   GET /api/report?gene_name=INS - 生成报告")
     print("   GET /api/quick?input=INS - 快速分析")
     app.run(debug=True, host='0.0.0.0', port=8080)

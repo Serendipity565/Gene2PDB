@@ -16,6 +16,15 @@
   查询单个 PDB 条目的标题、分辨率、实验方法、来源物种、发布日期等信息。
 - **结构物化性质与二级结构分析**  
   使用 BioPython + DSSP，统计链数量、残基数、原子数、二级结构（α-螺旋、β-折叠、线圈）等指标。
+- **高级结构分析**  
+  - 氢键统计、盐桥数量、二硫键检测  
+  - 每条链的 SASA（溶剂可及表面积）  
+  - 疏水/亲水残基比例分析
+- **突变影响简析**  
+  输入残基突变（如 `A:K33E`），对比本地简单打分（电荷变化、体积变化、疏水性变化），给出影响程度评估。
+- **序列相关分析**  
+  - 展示每条链的氨基酸组成统计图（条形图），包括各氨基酸占比、正/负电荷、疏水、极性、芳香族残基比例  
+  - 与 UniProt canonical 序列的比对结果，显示序列一致性、覆盖率、缺失/插入区段
 - **自动生成 Markdown 分析报告**  
   根据基因名或给定的 PDB ID 列表，生成包含基础信息、物化性质、在线浏览链接等内容的 Markdown 报告，可在网页端直接渲染或下载。
 - **一键快速分析**  
@@ -252,7 +261,123 @@ curl "http://localhost:8080/api/pdb/analyze/7s5v"
 }
 ```
 
-### 5. 生成分析报告
+### 5. 高级结构分析
+
+- **GET** `/api/pdb/analyze-advanced/<pdb_id>`
+- 功能：分析氢键、盐桥、二硫键数量、每条链的SASA（溶剂可及表面积）、疏水/亲水残基比例
+- 示例：
+
+```bash
+curl "http://localhost:8080/api/pdb/analyze-advanced/7s5v"
+```
+
+- 返回示例：
+
+```json
+{
+  "pdb_id": "7s5v",
+  "disulfide_bonds": {"count": 2, "bonds": ["..."]},
+  "salt_bridges": {"count": 15, "bridges": ["..."]},
+  "hydrogen_bonds": {"backbone_hbonds": 120, "total": 120},
+  "sasa_per_chain": {"A": 5000.5, "B": 4800.2},
+  "hydrophobicity_per_chain": {
+    "A": {"hydrophobic_count": 50, "hydrophilic_count": 30, "hydrophobic_ratio": 62.5, "hydrophilic_ratio": 37.5}
+  }
+}
+```
+
+### 6. 突变影响分析
+
+- **GET** `/api/pdb/mutation`
+- 查询参数：
+  - `pdb_id`（必填）：PDB ID
+  - `mutation`（必填）：突变描述，格式为 `链:原氨基酸+位置+新氨基酸`，如 `A:K33E`
+- 示例：
+
+```bash
+curl "http://localhost:8080/api/pdb/mutation?pdb_id=7s5v&mutation=A:K33E"
+```
+
+- 返回示例：
+
+```json
+{
+  "mutation": "A:K33E",
+  "pdb_id": "7s5v",
+  "wild_type": {"aa": "K", "name": "Lysine", "charge": 1, "volume": 168.6, "hydrophobic": false},
+  "mutant": {"aa": "E", "name": "Glutamic acid", "charge": -1, "volume": 138.4, "hydrophobic": false},
+  "changes": {"charge_change": -2, "volume_change": -30.2, "hydrophobicity_change": false, "polarity_change": false},
+  "impact_assessment": {"score": 3, "level": "中", "description": "该突变可能对蛋白有中等程度的影响", "reasons": ["电荷变化: -2"]}
+}
+```
+
+### 7. 序列组成分析
+
+- **GET** `/api/pdb/sequence-composition/<pdb_id>`
+- 功能：展示每条链的氨基酸组成统计，包括各氨基酸百分比、正/负电荷、疏水、极性、芳香族残基比例
+- 示例：
+
+```bash
+curl "http://localhost:8080/api/pdb/sequence-composition/7s5v"
+```
+
+- 返回示例：
+
+```json
+{
+  "pdb_id": "7s5v",
+  "chains": {
+    "A": {
+      "sequence": "MVLSPADKT...",
+      "length": 150,
+      "amino_acid_counts": {"A": 10, "C": 2},
+      "amino_acid_percentages": {"A": 6.67, "C": 1.33},
+      "category_statistics": {
+        "charged_positive": 15, "charged_positive_pct": 10.0,
+        "charged_negative": 12, "charged_negative_pct": 8.0,
+        "hydrophobic": 50, "hydrophobic_pct": 33.33,
+        "polar_uncharged": 40, "polar_uncharged_pct": 26.67,
+        "aromatic": 10, "aromatic_pct": 6.67
+      }
+    }
+  }
+}
+```
+
+### 8. UniProt 序列比对
+
+- **GET** `/api/pdb/align-uniprot/<pdb_id>`
+- 查询参数：
+  - `uniprot_id`（可选）：UniProt ID，留空则自动从 PDBe 映射获取
+- 功能：将 PDB 序列与 UniProt canonical 序列比对，展示序列一致性、覆盖率、缺失区段
+- 示例：
+
+```bash
+curl "http://localhost:8080/api/pdb/align-uniprot/7s5v"
+# 或指定 UniProt ID
+curl "http://localhost:8080/api/pdb/align-uniprot/7s5v?uniprot_id=P01308"
+```
+
+- 返回示例：
+
+```json
+{
+  "pdb_id": "7s5v",
+  "uniprot_id": "P01308",
+  "uniprot_length": 110,
+  "chain_alignments": {
+    "A": {
+      "pdb_length": 100,
+      "identity_percent": 95.5,
+      "coverage_percent": 90.9,
+      "missing_regions": [{"start": 1, "end": 5, "length": 5}],
+      "alignment_score": 180.0
+    }
+  }
+}
+```
+
+### 9. 生成分析报告
 
 - **GET** `/api/report`
 - 调用方式一：基于基因名

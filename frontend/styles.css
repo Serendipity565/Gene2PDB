@@ -534,3 +534,432 @@ body {
     }
 }
 
+/* ==================== 高级结构分析 ==================== */
+.advanced-content {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+}
+
+.analysis-section {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 12px;
+}
+
+.analysis-section h3 {
+    font-size: 1rem;
+    color: #667eea;
+    margin-bottom: 12px;
+}
+
+.analysis-section ul {
+    list-style: none;
+    padding: 0;
+    margin-top: 10px;
+}
+
+.analysis-section li {
+    padding: 5px 0;
+    font-size: 0.9rem;
+    color: #555;
+    border-bottom: 1px solid #eee;
+}
+
+.analysis-section li:last-child {
+    border-bottom: none;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+.data-table th,
+.data-table td {
+    padding: 10px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+    font-size: 0.9rem;
+}
+
+.data-table th {
+    background: #667eea;
+    color: white;
+    font-weight: 600;
+}
+
+.data-table tr:hover {
+    background: #f0f0f0;
+}
+
+/* 疏水/亲水比例条 */
+.ratio-bar {
+    display: flex;
+    height: 16px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #eee;
+    min-width: 100px;
+}
+
+.ratio-bar .hydrophobic {
+    background: linear-gradient(135deg, #f39c12, #e67e22);
+}
+
+.ratio-bar .hydrophilic {
+    background: linear-gradient(135deg, #3498db, #2980b9);
+}
+
+/* ==================== 突变影响分析 ==================== */
+.mutation-input {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.mutation-input input {
+    flex: 1;
+    padding: 12px 15px;
+    border: 2px solid #e0e0e0;
+    border-radius: 10px;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.3s;
+}
+
+.mutation-input input:focus {
+    border-color: #667eea;
+}
+
+.mutation-input button {
+    padding: 12px 25px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.mutation-input button:hover {
+    transform: translateY(-2px);
+}
+
+.mutation-result {
+    background: #f8f9fa;
+    border-radius: 12px;
+    padding: 20px;
+}
+
+.mutation-summary {
+    text-align: center;
+    margin-bottom: 25px;
+}
+
+.mutation-summary h3 {
+    font-size: 1.3rem;
+    color: #333;
+    margin-bottom: 10px;
+}
+
+.impact-badge {
+    display: inline-block;
+    padding: 8px 20px;
+    border-radius: 20px;
+    font-weight: 600;
+    margin-bottom: 10px;
+}
+
+.impact-badge.high {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+.impact-badge.medium {
+    background: #fef3c7;
+    color: #d97706;
+}
+
+.impact-badge.low {
+    background: #d1fae5;
+    color: #059669;
+}
+
+.mutation-details {
+    display: grid;
+    gap: 20px;
+}
+
+.aa-comparison {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.aa-box {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    min-width: 180px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.aa-box.wt {
+    border-left: 4px solid #3b82f6;
+}
+
+.aa-box.mut {
+    border-left: 4px solid #ef4444;
+}
+
+.aa-box h4 {
+    font-size: 1.1rem;
+    color: #333;
+    margin-bottom: 12px;
+}
+
+.aa-box p {
+    font-size: 0.9rem;
+    color: #555;
+    margin: 6px 0;
+}
+
+.aa-arrow {
+    font-size: 2rem;
+    color: #667eea;
+}
+
+.changes-summary,
+.impact-reasons,
+.structural-context {
+    background: white;
+    padding: 15px 20px;
+    border-radius: 10px;
+}
+
+.changes-summary h4,
+.impact-reasons h4,
+.structural-context h4 {
+    font-size: 1rem;
+    color: #667eea;
+    margin-bottom: 10px;
+}
+
+.changes-summary ul,
+.impact-reasons ul {
+    list-style: disc;
+    padding-left: 20px;
+}
+
+.changes-summary li,
+.impact-reasons li {
+    font-size: 0.9rem;
+    color: #555;
+    margin: 5px 0;
+}
+
+.structural-context p {
+    font-size: 0.9rem;
+    color: #555;
+    margin: 5px 0;
+}
+
+.structural-context .warning {
+    color: #d97706;
+    background: #fef3c7;
+    padding: 8px 12px;
+    border-radius: 6px;
+    margin-top: 10px;
+}
+
+/* ==================== 序列组成分析 ==================== */
+.sequence-content {
+    display: grid;
+    gap: 25px;
+}
+
+.chain-analysis {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 12px;
+}
+
+.chain-analysis h3 {
+    font-size: 1.1rem;
+    color: #333;
+    margin-bottom: 15px;
+}
+
+.category-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.stat-item {
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.stat-item.positive {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.stat-item.negative {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+.stat-item.hydrophobic {
+    background: #fef3c7;
+    color: #d97706;
+}
+
+.stat-item.polar {
+    background: #d1fae5;
+    color: #059669;
+}
+
+.stat-item.aromatic {
+    background: #f3e8ff;
+    color: #7c3aed;
+}
+
+/* ==================== UniProt 序列比对 ==================== */
+.alignment-input {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.alignment-input input {
+    flex: 1;
+    padding: 12px 15px;
+    border: 2px solid #e0e0e0;
+    border-radius: 10px;
+    font-size: 1rem;
+    outline: none;
+}
+
+.alignment-input input:focus {
+    border-color: #667eea;
+}
+
+.alignment-input button {
+    padding: 12px 25px;
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.alignment-result {
+    background: #f8f9fa;
+    border-radius: 12px;
+    padding: 20px;
+}
+
+.alignment-summary {
+    margin-bottom: 20px;
+}
+
+.alignment-summary h3 {
+    font-size: 1.1rem;
+    color: #333;
+    margin-bottom: 10px;
+}
+
+.alignment-summary p {
+    font-size: 0.95rem;
+    color: #555;
+    margin: 5px 0;
+}
+
+.chain-alignments {
+    display: grid;
+    gap: 20px;
+}
+
+.chain-alignment {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.chain-alignment h4 {
+    font-size: 1rem;
+    color: #667eea;
+    margin-bottom: 15px;
+}
+
+.alignment-stats {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-bottom: 15px;
+}
+
+.alignment-stats .stat {
+    text-align: center;
+}
+
+.alignment-stats .label {
+    display: block;
+    font-size: 0.8rem;
+    color: #888;
+    margin-bottom: 4px;
+}
+
+.alignment-stats .value {
+    display: block;
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #333;
+}
+
+.alignment-stats .value.identity {
+    color: #10b981;
+}
+
+.missing-regions {
+    margin-top: 15px;
+}
+
+.missing-regions h5 {
+    font-size: 0.9rem;
+    color: #ef4444;
+    margin-bottom: 8px;
+}
+
+.missing-regions ul {
+    list-style: disc;
+    padding-left: 20px;
+}
+
+.missing-regions li {
+    font-size: 0.85rem;
+    color: #555;
+    margin: 3px 0;
+}
+
+.no-missing {
+    color: #10b981;
+    font-size: 0.9rem;
+}
+
+/* 错误文本 */
+.error {
+    color: #ef4444;
+}

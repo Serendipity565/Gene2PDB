@@ -8,6 +8,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Markdown 解析库 -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Chart.js 绘图库 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="container">
@@ -68,6 +70,46 @@
             <section id="structureDetail" class="card detail-card hidden">
                 <h2>📋 结构详情</h2>
                 <div id="detailContent" class="detail-content">
+                    <!-- 动态填充 -->
+                </div>
+            </section>
+
+            <!-- 高级结构分析 -->
+            <section id="advancedAnalysis" class="card advanced-card hidden">
+                <h2>🔬 高级结构分析</h2>
+                <div id="advancedContent" class="advanced-content">
+                    <!-- 动态填充：氢键、盐桥、二硫键、SASA、疏水/亲水比例 -->
+                </div>
+            </section>
+
+            <!-- 突变影响分析 -->
+            <section class="card mutation-card">
+                <h2>🧬 突变影响分析</h2>
+                <div class="mutation-input">
+                    <input type="text" id="mutationInput" placeholder="输入突变，格式: A:K33E (链:原氨基酸+位置+新氨基酸)" />
+                    <button onclick="analyzeMutation()">分析突变</button>
+                </div>
+                <div id="mutationResult" class="mutation-result hidden">
+                    <!-- 动态填充 -->
+                </div>
+            </section>
+
+            <!-- 序列组成分析 -->
+            <section id="sequenceAnalysis" class="card sequence-card hidden">
+                <h2>📊 序列组成分析</h2>
+                <div id="sequenceContent" class="sequence-content">
+                    <!-- 氨基酸组成统计图 -->
+                </div>
+            </section>
+
+            <!-- UniProt 序列比对 -->
+            <section id="alignmentAnalysis" class="card alignment-card hidden">
+                <h2>🔗 UniProt 序列比对</h2>
+                <div class="alignment-input">
+                    <input type="text" id="uniprotIdInput" placeholder="UniProt ID (可选，留空自动获取)" />
+                    <button onclick="alignWithUniprot()">比对序列</button>
+                </div>
+                <div id="alignmentResult" class="alignment-result">
                     <!-- 动态填充 -->
                 </div>
             </section>

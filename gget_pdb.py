@@ -1,16 +1,52 @@
 #文件:gget_pdb.py
 import requests
 import json
-from Bio.PDB import PDBParser, PDBList
+from Bio.PDB import PDBParser, PDBList, NeighborSearch, Selection
 from Bio.PDB.DSSP import DSSP
+from Bio.PDB.SASA import ShrakeRupley
 from Bio.SeqUtils import ProtParam
+from Bio.Seq import Seq
+from Bio.Align import PairwiseAligner
 import py3Dmol
 import pandas as pd
 import numpy as np
 from IPython.display import display, Markdown, HTML
 import warnings
+import re
 
 warnings.filterwarnings('ignore')
+
+# 氨基酸属性常量
+AMINO_ACID_PROPERTIES = {
+    'A': {'name': 'Alanine', 'charge': 0, 'hydrophobic': True, 'volume': 88.6, 'polar': False},
+    'C': {'name': 'Cysteine', 'charge': 0, 'hydrophobic': True, 'volume': 108.5, 'polar': False},
+    'D': {'name': 'Aspartic acid', 'charge': -1, 'hydrophobic': False, 'volume': 111.1, 'polar': True},
+    'E': {'name': 'Glutamic acid', 'charge': -1, 'hydrophobic': False, 'volume': 138.4, 'polar': True},
+    'F': {'name': 'Phenylalanine', 'charge': 0, 'hydrophobic': True, 'volume': 189.9, 'polar': False},
+    'G': {'name': 'Glycine', 'charge': 0, 'hydrophobic': True, 'volume': 60.1, 'polar': False},
+    'H': {'name': 'Histidine', 'charge': 0.5, 'hydrophobic': False, 'volume': 153.2, 'polar': True},
+    'I': {'name': 'Isoleucine', 'charge': 0, 'hydrophobic': True, 'volume': 166.7, 'polar': False},
+    'K': {'name': 'Lysine', 'charge': 1, 'hydrophobic': False, 'volume': 168.6, 'polar': True},
+    'L': {'name': 'Leucine', 'charge': 0, 'hydrophobic': True, 'volume': 166.7, 'polar': False},
+    'M': {'name': 'Methionine', 'charge': 0, 'hydrophobic': True, 'volume': 162.9, 'polar': False},
+    'N': {'name': 'Asparagine', 'charge': 0, 'hydrophobic': False, 'volume': 114.1, 'polar': True},
+    'P': {'name': 'Proline', 'charge': 0, 'hydrophobic': True, 'volume': 112.7, 'polar': False},
+    'Q': {'name': 'Glutamine', 'charge': 0, 'hydrophobic': False, 'volume': 143.8, 'polar': True},
+    'R': {'name': 'Arginine', 'charge': 1, 'hydrophobic': False, 'volume': 173.4, 'polar': True},
+    'S': {'name': 'Serine', 'charge': 0, 'hydrophobic': False, 'volume': 89.0, 'polar': True},
+    'T': {'name': 'Threonine', 'charge': 0, 'hydrophobic': False, 'volume': 116.1, 'polar': True},
+    'V': {'name': 'Valine', 'charge': 0, 'hydrophobic': True, 'volume': 140.0, 'polar': False},
+    'W': {'name': 'Tryptophan', 'charge': 0, 'hydrophobic': True, 'volume': 227.8, 'polar': False},
+    'Y': {'name': 'Tyrosine', 'charge': 0, 'hydrophobic': False, 'volume': 193.6, 'polar': True},
+}
+
+# 三字母到单字母氨基酸转换
+THREE_TO_ONE = {
+    'ALA': 'A', 'CYS': 'C', 'ASP': 'D', 'GLU': 'E', 'PHE': 'F',
+    'GLY': 'G', 'HIS': 'H', 'ILE': 'I', 'LYS': 'K', 'LEU': 'L',
+    'MET': 'M', 'ASN': 'N', 'PRO': 'P', 'GLN': 'Q', 'ARG': 'R',
+    'SER': 'S', 'THR': 'T', 'VAL': 'V', 'TRP': 'W', 'TYR': 'Y'
+}
 
 
 class GGETPDB:
@@ -187,6 +223,541 @@ class GGETPDB:
             }
         except:
             results['secondary_structure'] = {'helix': 'N/A', 'beta_sheet': 'N/A', 'coil': 'N/A'}
+
+        return results
+
+    # ==================== 4.1 高级结构分析 ====================
+    def analyze_advanced_structure(self, pdb_id):
+        """高级结构分析：氢键、盐桥、二硫键、SASA、疏水/亲水比例"""
+        print(f"🔬 正在进行 {pdb_id} 的高级结构分析...")
+
+        # 下载PDB文件
+        pdbl = PDBList()
+        pdb_file = pdbl.retrieve_pdb_file(pdb_id, pdir='.', file_format='pdb')
+
+        if not pdb_file:
+            return None
+
+        # 解析结构
+        parser = PDBParser(QUIET=True)
+        structure = parser.get_structure(pdb_id, pdb_file)
+        model = structure[0]
+
+        results = {'pdb_id': pdb_id}
+
+        # 1. 二硫键分析
+        results['disulfide_bonds'] = self._find_disulfide_bonds(model)
+
+        # 2. 盐桥分析
+        results['salt_bridges'] = self._find_salt_bridges(model)
+
+        # 3. 氢键统计（基于DSSP）
+        try:
+            dssp = DSSP(model, pdb_file)
+            results['hydrogen_bonds'] = self._count_hydrogen_bonds(dssp)
+        except Exception as e:
+            results['hydrogen_bonds'] = {'total': 'N/A', 'error': str(e)}
+
+        # 4. SASA分析（每条链）
+        results['sasa_per_chain'] = self._calculate_sasa(model)
+
+        # 5. 疏水/亲水残基比例（每条链）
+        results['hydrophobicity_per_chain'] = self._analyze_hydrophobicity(model)
+
+        return results
+
+    def _find_disulfide_bonds(self, model):
+        """查找二硫键"""
+        disulfide_bonds = []
+        cysteine_residues = []
+
+        # 收集所有半胱氨酸的SG原子
+        for chain in model:
+            for residue in chain:
+                if residue.get_resname() == 'CYS':
+                    if 'SG' in residue:
+                        cysteine_residues.append({
+                            'chain': chain.id,
+                            'resnum': residue.id[1],
+                            'atom': residue['SG']
+                        })
+
+        # 检查半胱氨酸之间的距离（二硫键距离约2.05Å）
+        for i, cys1 in enumerate(cysteine_residues):
+            for cys2 in cysteine_residues[i+1:]:
+                distance = float(cys1['atom'] - cys2['atom'])  # 转换为 Python float
+                if distance < 2.5:  # 二硫键距离阈值
+                    disulfide_bonds.append({
+                        'cys1': f"{cys1['chain']}:{cys1['resnum']}",
+                        'cys2': f"{cys2['chain']}:{cys2['resnum']}",
+                        'distance': round(distance, 2)
+                    })
+
+        return {'count': len(disulfide_bonds), 'bonds': disulfide_bonds}
+
+    def _find_salt_bridges(self, model, distance_cutoff=4.0):
+        """查找盐桥"""
+        salt_bridges = []
+
+        # 正电荷残基的原子
+        positive_atoms = []
+        # 负电荷残基的原子
+        negative_atoms = []
+
+        positive_residues = ['ARG', 'LYS', 'HIS']
+        negative_residues = ['ASP', 'GLU']
+
+        positive_atom_names = {'ARG': ['NH1', 'NH2', 'NE'], 'LYS': ['NZ'], 'HIS': ['ND1', 'NE2']}
+        negative_atom_names = {'ASP': ['OD1', 'OD2'], 'GLU': ['OE1', 'OE2']}
+
+        for chain in model:
+            for residue in chain:
+                resname = residue.get_resname()
+                if resname in positive_residues:
+                    for atom_name in positive_atom_names.get(resname, []):
+                        if atom_name in residue:
+                            positive_atoms.append({
+                                'chain': chain.id,
+                                'resname': resname,
+                                'resnum': residue.id[1],
+                                'atom': residue[atom_name]
+                            })
+                elif resname in negative_residues:
+                    for atom_name in negative_atom_names.get(resname, []):
+                        if atom_name in residue:
+                            negative_atoms.append({
+                                'chain': chain.id,
+                                'resname': resname,
+                                'resnum': residue.id[1],
+                                'atom': residue[atom_name]
+                            })
+
+        # 检查正负电荷原子之间的距离
+        seen_pairs = set()
+        for pos in positive_atoms:
+            for neg in negative_atoms:
+                distance = float(pos['atom'] - neg['atom'])  # 转换为 Python float
+                if distance <= distance_cutoff:
+                    pair_key = tuple(sorted([
+                        f"{pos['chain']}:{pos['resname']}{pos['resnum']}",
+                        f"{neg['chain']}:{neg['resname']}{neg['resnum']}"
+                    ]))
+                    if pair_key not in seen_pairs:
+                        seen_pairs.add(pair_key)
+                        salt_bridges.append({
+                            'positive': f"{pos['chain']}:{pos['resname']}{pos['resnum']}",
+                            'negative': f"{neg['chain']}:{neg['resname']}{neg['resnum']}",
+                            'distance': round(distance, 2)
+                        })
+
+        return {'count': len(salt_bridges), 'bridges': salt_bridges}
+
+    def _count_hydrogen_bonds(self, dssp):
+        """统计氢键数量（基于DSSP）"""
+        # DSSP提供的氢键信息
+        hbonds_backbone = 0
+
+        for key in dssp.keys():
+            # DSSP返回的氢键信息（NH-->O和O-->NH）
+            # 索引3和4是NH-->O氢键，5和6是O-->NH氢键
+            dssp_data = dssp[key]
+            # 检查NH-->O方向
+            if dssp_data[6] != 0:  # 能量不为0表示存在氢键
+                hbonds_backbone += 1
+            if dssp_data[8] != 0:
+                hbonds_backbone += 1
+
+        return {'backbone_hbonds': hbonds_backbone, 'total': hbonds_backbone}
+
+    def _calculate_sasa(self, model):
+        """计算每条链的SASA"""
+        sasa_results = {}
+
+        try:
+            # 使用ShrakeRupley算法计算SASA
+            sr = ShrakeRupley()
+            sr.compute(model, level="R")  # 残基级别
+
+            for chain in model:
+                chain_id = chain.id
+                total_sasa = 0.0
+                for residue in chain:
+                    if hasattr(residue, 'sasa'):
+                        total_sasa += float(residue.sasa)  # 转换为 Python float
+
+                sasa_results[chain_id] = round(float(total_sasa), 2)  # 确保是 Python float
+        except Exception as e:
+            sasa_results['error'] = str(e)
+
+        return sasa_results
+
+    def _analyze_hydrophobicity(self, model):
+        """分析每条链的疏水/亲水残基比例"""
+        results = {}
+
+        for chain in model:
+            chain_id = chain.id
+            hydrophobic_count = 0
+            hydrophilic_count = 0
+            total = 0
+
+            for residue in chain:
+                resname = residue.get_resname()
+                one_letter = THREE_TO_ONE.get(resname)
+                if one_letter and one_letter in AMINO_ACID_PROPERTIES:
+                    total += 1
+                    if AMINO_ACID_PROPERTIES[one_letter]['hydrophobic']:
+                        hydrophobic_count += 1
+                    else:
+                        hydrophilic_count += 1
+
+            if total > 0:
+                results[chain_id] = {
+                    'hydrophobic_count': hydrophobic_count,
+                    'hydrophilic_count': hydrophilic_count,
+                    'hydrophobic_ratio': round(hydrophobic_count / total * 100, 2),
+                    'hydrophilic_ratio': round(hydrophilic_count / total * 100, 2),
+                    'total_residues': total
+                }
+
+        return results
+
+    # ==================== 4.2 突变影响分析 ====================
+    def analyze_mutation(self, pdb_id, mutation_str):
+        """
+        分析突变影响
+        mutation_str格式: "A:K33E" 表示A链第33位由K突变为E
+        """
+        print(f"🧬 正在分析突变 {mutation_str} 对 {pdb_id} 的影响...")
+
+        # 解析突变字符串
+        match = re.match(r'([A-Z]):([A-Z])(\d+)([A-Z])', mutation_str.upper())
+        if not match:
+            return {'error': '突变格式无效，请使用格式: A:K33E (链:原氨基酸+位置+新氨基酸)'}
+
+        chain_id, wt_aa, position, mut_aa = match.groups()
+        position = int(position)
+
+        # 验证氨基酸
+        if wt_aa not in AMINO_ACID_PROPERTIES or mut_aa not in AMINO_ACID_PROPERTIES:
+            return {'error': f'无效的氨基酸代码: {wt_aa} 或 {mut_aa}'}
+
+        wt_props = AMINO_ACID_PROPERTIES[wt_aa]
+        mut_props = AMINO_ACID_PROPERTIES[mut_aa]
+
+        # 计算变化
+        charge_change = mut_props['charge'] - wt_props['charge']
+        volume_change = mut_props['volume'] - wt_props['volume']
+        hydrophobicity_change = mut_props['hydrophobic'] != wt_props['hydrophobic']
+        polarity_change = mut_props['polar'] != wt_props['polar']
+
+        # 评估影响
+        impact_score = 0
+        impact_reasons = []
+
+        if abs(charge_change) >= 1:
+            impact_score += 3
+            impact_reasons.append(f"电荷变化: {'+' if charge_change > 0 else ''}{charge_change}")
+
+        if abs(volume_change) > 50:
+            impact_score += 2
+            impact_reasons.append(f"体积变化: {'+' if volume_change > 0 else ''}{volume_change:.1f}Å³")
+        elif abs(volume_change) > 20:
+            impact_score += 1
+            impact_reasons.append(f"中等体积变化: {'+' if volume_change > 0 else ''}{volume_change:.1f}Å³")
+
+        if hydrophobicity_change:
+            impact_score += 2
+            if wt_props['hydrophobic']:
+                impact_reasons.append("疏水 → 亲水 (可能影响蛋白折叠)")
+            else:
+                impact_reasons.append("亲水 → 疏水 (可能影响溶解性)")
+
+        if polarity_change:
+            impact_score += 1
+            impact_reasons.append("极性变化")
+
+        # 下载并检查结构中的实际残基
+        pdbl = PDBList()
+        pdb_file = pdbl.retrieve_pdb_file(pdb_id, pdir='.', file_format='pdb')
+
+        structural_context = None
+        if pdb_file:
+            parser = PDBParser(QUIET=True)
+            structure = parser.get_structure(pdb_id, pdb_file)
+            model = structure[0]
+
+            try:
+                chain = model[chain_id]
+                residue = chain[position]
+                actual_resname = THREE_TO_ONE.get(residue.get_resname(), '?')
+
+                structural_context = {
+                    'found_residue': actual_resname,
+                    'matches_wt': actual_resname == wt_aa,
+                    'position_valid': True
+                }
+
+                if actual_resname != wt_aa:
+                    structural_context['warning'] = f"结构中该位置的氨基酸是 {actual_resname}，而非 {wt_aa}"
+
+                # 检查是否在二级结构中
+                try:
+                    dssp = DSSP(model, pdb_file)
+                    dssp_key = (chain_id, (' ', position, ' '))
+                    if dssp_key in dssp:
+                        ss = dssp[dssp_key][2]
+                        ss_mapping = {
+                            'H': 'α-螺旋', 'G': '3₁₀-螺旋', 'I': 'π-螺旋',
+                            'E': 'β-折叠', 'B': 'β-桥', 'T': '转角',
+                            'S': '弯曲', '-': '环区'
+                        }
+                        structural_context['secondary_structure'] = ss_mapping.get(ss, ss)
+
+                        # 在二级结构核心区域的突变影响更大
+                        if ss in ['H', 'E']:
+                            impact_score += 1
+                            impact_reasons.append(f"位于{ss_mapping[ss]}核心区域")
+                except:
+                    pass
+
+            except KeyError:
+                structural_context = {
+                    'found_residue': None,
+                    'matches_wt': False,
+                    'position_valid': False,
+                    'error': f"未找到链 {chain_id} 或位置 {position}"
+                }
+
+        # 生成影响评估
+        if impact_score >= 5:
+            impact_level = "高"
+            impact_description = "该突变可能严重影响蛋白结构或功能"
+        elif impact_score >= 3:
+            impact_level = "中"
+            impact_description = "该突变可能对蛋白有中等程度的影响"
+        else:
+            impact_level = "低"
+            impact_description = "该突变可能是保守性替换，影响较小"
+
+        return {
+            'mutation': mutation_str,
+            'pdb_id': pdb_id,
+            'wild_type': {
+                'aa': wt_aa,
+                'name': wt_props['name'],
+                'charge': wt_props['charge'],
+                'volume': wt_props['volume'],
+                'hydrophobic': wt_props['hydrophobic']
+            },
+            'mutant': {
+                'aa': mut_aa,
+                'name': mut_props['name'],
+                'charge': mut_props['charge'],
+                'volume': mut_props['volume'],
+                'hydrophobic': mut_props['hydrophobic']
+            },
+            'changes': {
+                'charge_change': charge_change,
+                'volume_change': round(volume_change, 2),
+                'hydrophobicity_change': hydrophobicity_change,
+                'polarity_change': polarity_change
+            },
+            'impact_assessment': {
+                'score': impact_score,
+                'level': impact_level,
+                'description': impact_description,
+                'reasons': impact_reasons
+            },
+            'structural_context': structural_context
+        }
+
+    # ==================== 4.3 序列分析 ====================
+    def analyze_sequence_composition(self, pdb_id):
+        """分析每条链的氨基酸组成"""
+        print(f"📊 正在分析 {pdb_id} 的序列组成...")
+
+        # 下载PDB文件
+        pdbl = PDBList()
+        pdb_file = pdbl.retrieve_pdb_file(pdb_id, pdir='.', file_format='pdb')
+
+        if not pdb_file:
+            return None
+
+        parser = PDBParser(QUIET=True)
+        structure = parser.get_structure(pdb_id, pdb_file)
+        model = structure[0]
+
+        results = {'pdb_id': pdb_id, 'chains': {}}
+
+        for chain in model:
+            chain_id = chain.id
+            sequence = []
+            aa_counts = {aa: 0 for aa in AMINO_ACID_PROPERTIES.keys()}
+
+            for residue in chain:
+                resname = residue.get_resname()
+                one_letter = THREE_TO_ONE.get(resname)
+                if one_letter:
+                    sequence.append(one_letter)
+                    if one_letter in aa_counts:
+                        aa_counts[one_letter] += 1
+
+            if sequence:
+                total = len(sequence)
+                # 计算百分比
+                aa_percentages = {aa: round(count / total * 100, 2)
+                                 for aa, count in aa_counts.items()}
+
+                # 分类统计
+                charged_positive = sum(aa_counts[aa] for aa in ['K', 'R', 'H'])
+                charged_negative = sum(aa_counts[aa] for aa in ['D', 'E'])
+                hydrophobic = sum(aa_counts[aa] for aa in ['A', 'V', 'L', 'I', 'M', 'F', 'W', 'P'])
+                polar = sum(aa_counts[aa] for aa in ['S', 'T', 'N', 'Q', 'Y', 'C'])
+                aromatic = sum(aa_counts[aa] for aa in ['F', 'Y', 'W'])
+
+                results['chains'][chain_id] = {
+                    'sequence': ''.join(sequence),
+                    'length': total,
+                    'amino_acid_counts': aa_counts,
+                    'amino_acid_percentages': aa_percentages,
+                    'category_statistics': {
+                        'charged_positive': charged_positive,
+                        'charged_positive_pct': round(charged_positive / total * 100, 2),
+                        'charged_negative': charged_negative,
+                        'charged_negative_pct': round(charged_negative / total * 100, 2),
+                        'hydrophobic': hydrophobic,
+                        'hydrophobic_pct': round(hydrophobic / total * 100, 2),
+                        'polar_uncharged': polar,
+                        'polar_uncharged_pct': round(polar / total * 100, 2),
+                        'aromatic': aromatic,
+                        'aromatic_pct': round(aromatic / total * 100, 2)
+                    }
+                }
+
+        return results
+
+    def align_with_uniprot(self, pdb_id, uniprot_id=None):
+        """将PDB序列与UniProt canonical序列比对"""
+        print(f"🔗 正在比对 {pdb_id} 与 UniProt 序列...")
+
+        # 获取PDB序列
+        pdb_info = self.fetch_pdb_info(pdb_id)
+        if not pdb_info or not pdb_info.get('sequence'):
+            # 尝试从结构文件获取
+            pdbl = PDBList()
+            pdb_file = pdbl.retrieve_pdb_file(pdb_id, pdir='.', file_format='pdb')
+            if pdb_file:
+                parser = PDBParser(QUIET=True)
+                structure = parser.get_structure(pdb_id, pdb_file)
+                model = structure[0]
+
+                pdb_sequences = {}
+                for chain in model:
+                    seq = []
+                    for residue in chain:
+                        one_letter = THREE_TO_ONE.get(residue.get_resname())
+                        if one_letter:
+                            seq.append(one_letter)
+                    if seq:
+                        pdb_sequences[chain.id] = ''.join(seq)
+            else:
+                return {'error': f'无法获取 {pdb_id} 的序列'}
+        else:
+            pdb_sequences = {'A': pdb_info.get('sequence', '')}
+
+        # 如果没有提供UniProt ID，尝试从PDB映射获取
+        if not uniprot_id:
+            try:
+                url = f"https://www.ebi.ac.uk/pdbe/api/mappings/uniprot/{pdb_id}"
+                response = requests.get(url)
+                if response.status_code == 200:
+                    data = response.json()
+                    uniprot_entries = data.get(pdb_id.lower(), {}).get('UniProt', {})
+                    if uniprot_entries:
+                        uniprot_id = list(uniprot_entries.keys())[0]
+            except:
+                pass
+
+        if not uniprot_id:
+            return {'error': '无法确定UniProt ID，请手动提供', 'pdb_sequences': pdb_sequences}
+
+        # 获取UniProt序列
+        try:
+            url = f"https://rest.uniprot.org/uniprotkb/{uniprot_id}.fasta"
+            response = requests.get(url)
+            if response.status_code != 200:
+                return {'error': f'无法获取UniProt序列: {uniprot_id}'}
+
+            fasta_lines = response.text.strip().split('\n')
+            uniprot_seq = ''.join(fasta_lines[1:])
+        except Exception as e:
+            return {'error': f'获取UniProt序列失败: {e}'}
+
+        # 进行序列比对
+        results = {
+            'pdb_id': pdb_id,
+            'uniprot_id': uniprot_id,
+            'uniprot_length': len(uniprot_seq),
+            'chain_alignments': {}
+        }
+
+        aligner = PairwiseAligner()
+        aligner.mode = 'global'
+        aligner.match_score = 2
+        aligner.mismatch_score = -1
+        aligner.open_gap_score = -2
+        aligner.extend_gap_score = -0.5
+
+        for chain_id, pdb_seq in pdb_sequences.items():
+            if len(pdb_seq) < 10:  # 跳过太短的序列
+                continue
+
+            alignments = aligner.align(uniprot_seq, pdb_seq)
+            if alignments:
+                best_alignment = alignments[0]
+
+                # 计算序列一致性
+                aligned_uniprot, aligned_pdb = best_alignment.aligned
+
+                # 简单计算一致性
+                matches = 0
+                total_aligned = 0
+                gaps_in_pdb = []  # 缺失区段
+                insertions_in_pdb = []  # 插入区段
+
+                uniprot_aligned = str(best_alignment).split('\n')[0]
+                pdb_aligned = str(best_alignment).split('\n')[2] if len(str(best_alignment).split('\n')) > 2 else ''
+
+                # 计算identity
+                for i, (u, p) in enumerate(zip(uniprot_aligned, pdb_aligned)):
+                    if u != '-' and p != '-':
+                        total_aligned += 1
+                        if u == p:
+                            matches += 1
+
+                identity = round(matches / len(uniprot_seq) * 100, 2) if uniprot_seq else 0
+                coverage = round(len(pdb_seq) / len(uniprot_seq) * 100, 2) if uniprot_seq else 0
+
+                # 检测缺失和插入区段
+                # 通过aligned块来识别
+                current_pos = 0
+                for block in aligned_uniprot:
+                    start, end = block
+                    if start > current_pos:
+                        gaps_in_pdb.append({'start': current_pos + 1, 'end': start, 'length': start - current_pos})
+                    current_pos = end
+
+                if current_pos < len(uniprot_seq):
+                    gaps_in_pdb.append({'start': current_pos + 1, 'end': len(uniprot_seq), 'length': len(uniprot_seq) - current_pos})
+
+                results['chain_alignments'][chain_id] = {
+                    'pdb_length': len(pdb_seq),
+                    'identity_percent': identity,
+                    'coverage_percent': coverage,
+                    'missing_regions': gaps_in_pdb,
+                    'alignment_score': best_alignment.score
+                }
 
         return results
 
